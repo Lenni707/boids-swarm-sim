@@ -1,5 +1,12 @@
 use macroquad::prelude::*;
 
+const VISUAL_RANGE: f32 = 100.0;
+const COHERENCE: f32 = 0.1;
+const AVOIDFACTOR: f32 = 0.1;
+const AVOIDDISTANCE: f32 = 50.0;
+const ALLIGNMENTFACTOR: f32 = 0.1;
+
+#[derive(PartialEq)]
 struct Boid {
     pos: Vec2,
     vel: Vec2
@@ -35,7 +42,47 @@ impl World {
             draw_circle(boid.pos.x, boid.pos.y, 10.0, BLUE);
         }
     }
+    
+    fn alignment(&mut self) -> Vec<Vec2> { // boids versuchen den speed der umliegenden boids (im sichtfeld) zu matchen
+        let mut changed_vels = vec![];
+        let mut boid_vel_avr: Vec2 = Vec2::ZERO;
+        let mut neighbors: f32 = 0.0;
+        for self_boid in &self.boids {
+            for other_boid in &self.boids {
+                let distance = self_boid.pos.distance(other_boid.pos);
+                if distance <= VISUAL_RANGE {
+                    boid_vel_avr += other_boid.vel;
+                    neighbors += 1.0
+                }
+                let new_boid_speed = (boid_vel_avr / neighbors) - self_boid.vel * ALLIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
+                changed_vels.push(new_boid_speed)
+            }
+        }
+        changed_vels
+    }
 
+    fn separation(&self) -> Vec<Vec2> { // boids wollen sich nicht zu nahe kommen
+        let mut changed_vels = vec![];
+        let mut move_away = Vec2::ZERO;
+        for self_boid in &self.boids {
+            for other_boid in &self.boids {
+                if self_boid == other_boid {
+                    continue;
+                }
+                let distance = self_boid.pos.distance(other_boid.pos); // feature von macroqaud, basicly satz des pythagoras mit den vectoren
+                if distance < AVOIDDISTANCE {
+                    // je näher desto mehr wollen die weg
+                    move_away += (self_boid.pos - other_boid.pos) * AVOIDFACTOR;
+                }
+            }
+            changed_vels.push(move_away);
+        }
+        changed_vels
+    }
+
+    fn cohesion() { // boids steuern richtung durschschnittliche koordinaten der umliegenden boids (im sichtfeld)
+        
+    }
     
 }
 
@@ -46,6 +93,11 @@ async fn main() {
 
     loop {
         clear_background(BLACK);
+
+        world.handle_click();
+
+        world.draw();
+
         next_frame().await;
     }
 }
