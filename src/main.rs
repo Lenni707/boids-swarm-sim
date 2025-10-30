@@ -1,13 +1,18 @@
 use macroquad::prelude::*;
 
-const SCREEN_HEIGHT: i32 = 800;
-const SCREEN_WIDTH: i32 = 800;
+// todo: Werter anpassen, jeweilige kraft limitieren damit eines nicht zu stark wird
+// https://vanhunteradams.com/Pico/Animal_Movement/Boids-algorithm.html
 
-const VISUAL_RANGE: f32 = 100.0;
-const COHERENCE: f32 = 0.1;
-const AVOIDFACTOR: f32 = 0.1;
-const AVOIDDISTANCE: f32 = 50.0;
-const ALLIGNMENTFACTOR: f32 = 0.1;
+const SCREEN_HEIGHT: i32 = 800;
+const SCREEN_WIDTH: i32 = 1600;
+
+const VISUAL_RANGE: f32 = 75.0;          
+const COHERENCE: f32 = 0.0005;            
+const AVOIDFACTOR: f32 = 0.0002;          
+const AVOIDDISTANCE: f32 = 50.0;         
+const ALLIGNMENTFACTOR: f32 = 0.01;      
+
+const EDGE_DISTANCE: f32 = 100.0;  
 
 #[derive(PartialEq)]
 struct Boid {
@@ -17,9 +22,14 @@ struct Boid {
 
 impl Boid {
     fn new(x: f32, y: f32) -> Self {
+        let vel = Vec2::new(
+            rand::gen_range(-2.0, 2.0), // random start speed
+            rand::gen_range(-2.0, 2.0),
+        );
+        
         Self {
             pos: Vec2::new(x, y),
-            vel: Vec2::ZERO
+            vel
         }
     }
 }
@@ -53,13 +63,14 @@ impl World {
             let mut neighbors: f32 = 0.0;
             for other_boid in &self.boids {
                 let distance = self_boid.pos.distance(other_boid.pos);
-                if distance <= VISUAL_RANGE {
+                if distance <= VISUAL_RANGE { // hoffe das zweite hilft && distance >= AVOIDDISTANCE 
                     boids_vel += other_boid.vel;
                     neighbors += 1.0
                 }
             }
             if neighbors > 0.0 {
-                let new_boid_speed = (boids_vel / neighbors) - self_boid.vel * ALLIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
+                let avg_spped = boids_vel / neighbors;
+                let new_boid_speed = (avg_spped - self_boid.vel)  * ALLIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
                 changed_vels.push(new_boid_speed)
             }
             else {
@@ -115,22 +126,22 @@ impl World {
     }
 
     fn check_edge(&mut self) -> Vec<Vec2> {
-        let mut move_away = Vec2::ZERO;
         let mut changed_vels = vec![];
         for boid in &self.boids {
-            if boid.pos.x > SCREEN_WIDTH as f32 - 20.0 {
-                let dist = boid.pos.x - (SCREEN_WIDTH as f32 - 20.0);
+            let mut move_away = Vec2::ZERO;
+            if boid.pos.x > SCREEN_WIDTH as f32 - EDGE_DISTANCE {
+                let dist = boid.pos.x - (SCREEN_WIDTH as f32 - EDGE_DISTANCE);
                 move_away += Vec2::new(-dist * 0.2, 0.0); // push left
-            } else if boid.pos.x < 20.0 {
-                let dist = 20.0 - boid.pos.x;
+            } else if boid.pos.x < EDGE_DISTANCE {
+                let dist = EDGE_DISTANCE - boid.pos.x;
                 move_away += Vec2::new(dist * 0.2, 0.0); // push right
             }
 
-            if boid.pos.y > SCREEN_HEIGHT as f32 - 20.0 {
-                let dist = boid.pos.y - (SCREEN_HEIGHT as f32 - 20.0);
+            if boid.pos.y > SCREEN_HEIGHT as f32 - EDGE_DISTANCE {
+                let dist = boid.pos.y - (SCREEN_HEIGHT as f32 - EDGE_DISTANCE);
                 move_away += Vec2::new(0.0, -dist * 0.2); // push up
-            } else if boid.pos.y < 20.0 {
-                let dist = 20.0 - boid.pos.y;
+            } else if boid.pos.y < EDGE_DISTANCE {
+                let dist = EDGE_DISTANCE - boid.pos.y;
                 move_away += Vec2::new(0.0, dist * 0.2); // push down
             }
             changed_vels.push(move_away);
@@ -139,6 +150,10 @@ impl World {
     }
 
     fn update_velocities(&mut self) -> Vec<Vec2> { // added alles zusammen
+        if self.boids.is_empty() { // damit kein panic wenn keine boids da
+            return vec![];
+        }
+
         let alignment = self.alignment();
         let separation = self.separation();
         let cohesion = self.cohesion();
@@ -154,9 +169,24 @@ impl World {
     }
 
     fn update(&mut self) {
+        if self.boids.is_empty() {
+            return;
+        }
+
         let updated_vels = self.update_velocities();
+
         for i in 0..self.boids.len() {
-            self.boids[i].pos += updated_vels[i]
+            // neue velocity
+            self.boids[i].vel += updated_vels[i];
+
+            // max speed
+            let speed = self.boids[i].vel.length();
+            let max_speed = 5.0;
+            if speed > max_speed {
+                self.boids[i].vel = self.boids[i].vel.normalize() * max_speed;
+            }
+            let vel = self.boids[i].vel;
+            self.boids[i].pos += vel;
         }
     }
 }
