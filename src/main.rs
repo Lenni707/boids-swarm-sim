@@ -7,13 +7,13 @@ use macroquad::rand::gen_range;
 const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
 
-const VISUAL_RANGE: f32 = 100.0;          
+const VISUAL_RANGE: f32 = 75.0;          
 const COHERENCE: f32 = 0.0005;            
-const AVOIDFACTOR: f32 = 0.15;          
-const AVOIDDISTANCE: f32 = 30.0;         
+const AVOIDFACTOR: f32 = 0.05;          
+const AVOIDDISTANCE: f32 = 20.0;         
 const ALIGNMENTFACTOR: f32 = 0.05;      
 
-const TURNFACTOR: f32 = 0.4;
+const TURNFACTOR: f32 = 1.0;
 const EDGE_DISTANCE: f32 = 50.0;  
 
 #[derive(PartialEq)]
@@ -25,8 +25,8 @@ struct Boid {
 impl Boid {
     fn new(x: f32, y: f32) -> Self {
         let vel = Vec2::new(
-            rand::gen_range(-2.0, 2.0), // random start speed
-            rand::gen_range(-2.0, 2.0),
+            rand::gen_range(-5.0, 5.0), // random start speed
+            rand::gen_range(-5.0, 5.0),
         );
         
         Self {
@@ -184,8 +184,8 @@ impl World {
 
             // max speed
             let speed = self.boids[i].vel.length();
-            let max_speed = 6.0;
-            let min_speed = 3.0;
+            let max_speed = 15.0;
+            let min_speed = 5.0;
             if speed > max_speed {
                 self.boids[i].vel = self.boids[i].vel.normalize() * max_speed;
             }
@@ -227,7 +227,7 @@ fn window_conf() -> Conf {
 async fn main() {
     let mut world = World::new();
 
-    world.spawn_boids(300);
+    world.spawn_boids(100);
 
     loop {
         clear_background(BLACK);
