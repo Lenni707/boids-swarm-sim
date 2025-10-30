@@ -7,10 +7,10 @@ use macroquad::rand::gen_range;
 const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
 
-const VISUAL_RANGE: f32 = 40.0;          
+const VISUAL_RANGE: f32 = 100.0;          
 const COHERENCE: f32 = 0.005;            
 const AVOIDFACTOR: f32 = 0.05;          
-const AVOIDDISTANCE: f32 = 8.0;         
+const AVOIDDISTANCE: f32 = 20.0;         
 const ALIGNMENTFACTOR: f32 = 0.05;      
 
 const TURNFACTOR: f32 = 0.4;
