@@ -1,5 +1,8 @@
 use macroquad::prelude::*;
 
+const SCREEN_HEIGHT: i32 = 800;
+const SCREEN_WIDTH: i32 = 800;
+
 const VISUAL_RANGE: f32 = 100.0;
 const COHERENCE: f32 = 0.1;
 const AVOIDFACTOR: f32 = 0.1;
@@ -45,16 +48,16 @@ impl World {
     
     fn alignment(&mut self) -> Vec<Vec2> { // boids versuchen den speed der umliegenden boids (im sichtfeld) zu matchen
         let mut changed_vels = vec![];
-        let mut boid_vel_avr: Vec2 = Vec2::ZERO;
+        let mut boids_vel: Vec2 = Vec2::ZERO;
         let mut neighbors: f32 = 0.0;
         for self_boid in &self.boids {
             for other_boid in &self.boids {
                 let distance = self_boid.pos.distance(other_boid.pos);
                 if distance <= VISUAL_RANGE {
-                    boid_vel_avr += other_boid.vel;
+                    boids_vel += other_boid.vel;
                     neighbors += 1.0
                 }
-                let new_boid_speed = (boid_vel_avr / neighbors) - self_boid.vel * ALLIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
+                let new_boid_speed = (boids_vel / neighbors) - self_boid.vel * ALLIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
                 changed_vels.push(new_boid_speed)
             }
         }
@@ -80,14 +83,40 @@ impl World {
         changed_vels
     }
 
-    fn cohesion() { // boids steuern richtung durschschnittliche koordinaten der umliegenden boids (im sichtfeld)
-        
+    fn cohesion(&mut self) -> Vec<Vec2> { // boids steuern richtung durschschnittliche koordinaten der umliegenden boids (im sichtfeld)
+        let mut changed_vels = vec![];
+        let mut boids_pos: Vec2 = Vec2::ZERO;
+        let mut neighbors: f32 = 0.0;
+        for self_boid in &self.boids {
+            for other_boid in &self.boids {
+                let distance = self_boid.pos.distance(other_boid.pos);
+                if distance <= VISUAL_RANGE {
+                    boids_pos += other_boid.pos;
+                    neighbors += 1.0
+                }
+                let boids_avr_pos = boids_pos / neighbors;
+
+                let new_boid_speed = (boids_avr_pos - self_boid.pos) * COHERENCE; // boid versucht zur durchschnittlichen position zu steuern
+
+                changed_vels.push(new_boid_speed)
+            }
+        }
+        changed_vels
     }
     
 }
 
+fn window_conf() -> Conf {
+    Conf {
+        window_title: "Swarm Sim".to_string(),
+        window_width: SCREEN_WIDTH,
+        window_height: SCREEN_HEIGHT,
+        fullscreen: false,
+        ..Default::default()
+    }
+}
 
-#[macroquad::main("Swarm Sim")]
+#[macroquad::main(window_conf)]
 async fn main() {
     let mut world = World::new();
 
