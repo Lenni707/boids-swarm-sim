@@ -6,13 +6,14 @@ use macroquad::rand::gen_range;
 // raubvogel adden vor dem die boids wegfliegen
 // wind adden was die beeinflusst
 // prefrences: manches boids sind eher links/rechts zentriert
+// 3d machen
 
 const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
 
 const VISUAL_RANGE: f32 = 75.0;           // sight distance
 const COHERENCE: f32 = 0.002;             // how much boids move toward group center
-const AVOIDFACTOR: f32 = 0.08;            // how strongly they avoid others
+const AVOIDFACTOR: f32 = 0.05;            // how strongly they avoid others // war mal 0.08
 const AVOIDDISTANCE: f32 = 20.0;          // minimum allowed distance between boids
 const ALIGNMENTFACTOR: f32 = 0.05;        // how strongly they match neighbor velocity
 
@@ -41,6 +42,14 @@ impl Boid {
             vel,
         }
     }
+    fn draw(&self) {
+        let angle = self.vel.y.atan2(self.vel.x);
+        let size = 6.0;
+        let p1 = self.pos + Vec2::from_angle(angle) * size;
+        let p2 = self.pos + Vec2::from_angle(angle + 2.5) * size * 0.6;
+        let p3 = self.pos + Vec2::from_angle(angle - 2.5) * size * 0.6;
+        draw_triangle(p1, p2, p3, WHITE);
+    }
 }
 
 struct World {
@@ -61,13 +70,7 @@ impl World {
 
     fn draw(&self) {
         for boid in &self.boids {
-            // boid wird als gleich-schenkliges dreieck gezeichnet das die richtung anzeigt
-            let angle = boid.vel.y.atan2(boid.vel.x);
-            let size = 6.0;
-            let p1 = boid.pos + Vec2::from_angle(angle) * size;
-            let p2 = boid.pos + Vec2::from_angle(angle + 2.5) * size * 0.6;
-            let p3 = boid.pos + Vec2::from_angle(angle - 2.5) * size * 0.6;
-            draw_triangle(p1, p2, p3, WHITE);
+            boid.draw(); // method defined in impl Boid
         }
     }
 
@@ -143,26 +146,6 @@ impl World {
         changed_vels
     }
 
-    fn check_edge(&self) -> Vec<Vec2> { // boid wird von den seiten weggetrieben
-        let mut changed_vels = vec![];
-        for boid in &self.boids {
-            let mut move_away = Vec2::ZERO;
-            if boid.pos.x < EDGE_DISTANCE {
-                move_away.x += TURNFACTOR;
-            } else if boid.pos.x > SCREEN_WIDTH as f32 - EDGE_DISTANCE {
-                move_away.x -= TURNFACTOR;
-            }
-
-            if boid.pos.y < EDGE_DISTANCE {
-                move_away.y += TURNFACTOR;
-            } else if boid.pos.y > SCREEN_HEIGHT as f32 - EDGE_DISTANCE {
-                move_away.y -= TURNFACTOR;
-            }
-            changed_vels.push(move_away);
-        }
-        changed_vels
-    }
-
     fn update_velocities(&mut self) -> Vec<Vec2> {
         if self.boids.is_empty() {
             return vec![];
@@ -171,7 +154,9 @@ impl World {
         let alignment = self.alignment();
         let separation = self.separation();
         let cohesion = self.cohesion();
-        let edge_avoid = self.check_edge();
+
+
+        let edge_avoid = check_edge_boids(&self.boids);
 
         let mut final_vels = vec![Vec2::ZERO; self.boids.len()]; // das letzere muss iwe weil dann die größe des vecs bekannt ist
 
@@ -229,6 +214,37 @@ impl World {
         }
     }
 }
+
+// pub functions
+
+// wandelt boids.pos in eine vec2 um
+fn check_edge_boids(boids: &[Boid]) -> Vec<Vec2> {
+    check_edge_positions(&boids.iter().map(|b| b.pos).collect::<Vec<_>>())
+}
+
+// macht die math und nimmt nur vec2 als parameter deswegen brauchen wir die obige umwandlungsfunktion
+fn check_edge_positions(positions: &[Vec2]) -> Vec<Vec2> {
+    let mut adjustments = Vec::with_capacity(positions.len());
+    for pos in positions {
+        let mut move_away = Vec2::ZERO;
+
+        if pos.x < EDGE_DISTANCE {
+            move_away.x += TURNFACTOR;
+        } else if pos.x > SCREEN_WIDTH as f32 - EDGE_DISTANCE {
+            move_away.x -= TURNFACTOR;
+        }
+
+        if pos.y < EDGE_DISTANCE {
+            move_away.y += TURNFACTOR;
+        } else if pos.y > SCREEN_HEIGHT as f32 - EDGE_DISTANCE {
+            move_away.y -= TURNFACTOR;
+        }
+
+        adjustments.push(move_away);
+    }
+    adjustments
+}
+
 
 fn window_conf() -> Conf {
     Conf {
