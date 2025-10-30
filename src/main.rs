@@ -7,13 +7,13 @@ use macroquad::rand::gen_range;
 const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
 
-const VISUAL_RANGE: f32 = 75.0;          
-const COHERENCE: f32 = 0.0005;            
+const VISUAL_RANGE: f32 = 40.0;          
+const COHERENCE: f32 = 0.005;            
 const AVOIDFACTOR: f32 = 0.05;          
-const AVOIDDISTANCE: f32 = 20.0;         
+const AVOIDDISTANCE: f32 = 8.0;         
 const ALIGNMENTFACTOR: f32 = 0.05;      
 
-const TURNFACTOR: f32 = 1.0;
+const TURNFACTOR: f32 = 0.4;
 const EDGE_DISTANCE: f32 = 50.0;  
 
 #[derive(PartialEq)]
@@ -72,7 +72,7 @@ impl World {
             }
             if neighbors > 0.0 {
                 let avg_speed = boids_vel / neighbors;
-                let new_boid_speed = (avg_speed - self_boid.vel)  * ALIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
+                let new_boid_speed = (avg_speed.normalize() - self_boid.vel.normalize())  * ALIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
                 changed_vels.push(new_boid_speed)
             }
             else {
@@ -160,7 +160,11 @@ impl World {
         let mut final_vels = vec![Vec2::ZERO; self.boids.len()]; // vektor direkt mit richtiger länge
 
         for i in 0..self.boids.len() {
-            final_vels[i] = alignment[i] + separation[i] + cohesion[i] + edge_avoid[i];
+            final_vels[i] =
+                alignment[i].clamp_length_max(1.0) * 0.5 +
+                separation[i].clamp_length_max(1.0) * 1.5 +
+                cohesion[i].clamp_length_max(1.0) * 0.2 +
+                edge_avoid[i].clamp_length_max(1.0) * 1.0;
         }
 
         final_vels
@@ -193,7 +197,7 @@ impl World {
                 self.boids[i].vel = self.boids[i].vel.normalize() * min_speed;
             }
 
-            let max_turn = 0.5; // how much they can turn per frame
+            let max_turn = 1.0; // how much they can turn per frame
             let vel_change = self.boids[i].vel - old_vel;
             if vel_change.length() > max_turn {
                 self.boids[i].vel = old_vel + vel_change.normalize() * max_turn;
