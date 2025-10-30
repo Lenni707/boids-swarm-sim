@@ -92,7 +92,7 @@ impl World {
         let mut changed_vels = vec![];
         for self_boid in &self.boids {
             let mut boids_pos: Vec2 = Vec2::ZERO;
-        let mut neighbors: f32 = 0.0;
+            let mut neighbors: f32 = 0.0;
             for other_boid in &self.boids {
                 let distance = self_boid.pos.distance(other_boid.pos);
                 if distance <= VISUAL_RANGE {
@@ -113,7 +113,52 @@ impl World {
         }
         changed_vels
     }
-    
+
+    fn check_edge(&mut self) -> Vec<Vec2> {
+        let mut move_away = Vec2::ZERO;
+        let mut changed_vels = vec![];
+        for boid in &self.boids {
+            if boid.pos.x > SCREEN_WIDTH as f32 - 20.0 {
+                let dist = boid.pos.x - (SCREEN_WIDTH as f32 - 20.0);
+                move_away += Vec2::new(-dist * 0.2, 0.0); // push left
+            } else if boid.pos.x < 20.0 {
+                let dist = 20.0 - boid.pos.x;
+                move_away += Vec2::new(dist * 0.2, 0.0); // push right
+            }
+
+            if boid.pos.y > SCREEN_HEIGHT as f32 - 20.0 {
+                let dist = boid.pos.y - (SCREEN_HEIGHT as f32 - 20.0);
+                move_away += Vec2::new(0.0, -dist * 0.2); // push up
+            } else if boid.pos.y < 20.0 {
+                let dist = 20.0 - boid.pos.y;
+                move_away += Vec2::new(0.0, dist * 0.2); // push down
+            }
+            changed_vels.push(move_away);
+        }
+        changed_vels
+    }
+
+    fn update_velocities(&mut self) -> Vec<Vec2> { // added alles zusammen
+        let alignment = self.alignment();
+        let separation = self.separation();
+        let cohesion = self.cohesion();
+        let edge_avoid = self.check_edge();
+
+        let mut final_vels = vec![Vec2::ZERO; self.boids.len()]; // vektor direkt mit richtiger länge
+
+        for i in 0..self.boids.len() {
+            final_vels[i] = alignment[i] + separation[i] + cohesion[i] + edge_avoid[i];
+        }
+
+        final_vels
+    }
+
+    fn update(&mut self) {
+        let updated_vels = self.update_velocities();
+        for i in 0..self.boids.len() {
+            self.boids[i].pos += updated_vels[i]
+        }
+    }
 }
 
 fn window_conf() -> Conf {
@@ -134,7 +179,7 @@ async fn main() {
         clear_background(BLACK);
 
         world.handle_click();
-
+        world.update();
         world.draw();
 
         next_frame().await;
