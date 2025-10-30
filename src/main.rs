@@ -1,43 +1,50 @@
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
 
-// todo: Werter anpassen, jeweilige kraft limitieren damit eines nicht zu stark wird
-// https://vanhunteradams.com/Pico/Animal_Movement/Boids-algorithm.html
+// -!TODO!- 
+// - so ein cone für die sicht des boids adden damit er z.b nicht hinter sich gucken kann
+// raubvogel adden vor dem die boids wegfliegen
+// wind adden was die beeinflusst
+// prefrences: manches boids sind eher links/rechts zentriert
 
 const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
 
-const VISUAL_RANGE: f32 = 100.0;          
-const COHERENCE: f32 = 0.005;            
-const AVOIDFACTOR: f32 = 0.05;          
-const AVOIDDISTANCE: f32 = 20.0;         
-const ALIGNMENTFACTOR: f32 = 0.05;      
+const VISUAL_RANGE: f32 = 75.0;           // sight distance
+const COHERENCE: f32 = 0.002;             // how much boids move toward group center
+const AVOIDFACTOR: f32 = 0.08;            // how strongly they avoid others
+const AVOIDDISTANCE: f32 = 20.0;          // minimum allowed distance between boids
+const ALIGNMENTFACTOR: f32 = 0.05;        // how strongly they match neighbor velocity
 
-const TURNFACTOR: f32 = 0.4;
-const EDGE_DISTANCE: f32 = 50.0;  
+const TURNFACTOR: f32 = 0.2;              // how fast they turn near edges
+const EDGE_DISTANCE: f32 = 100.0;         // how close to edge before turning
+
+const MAX_SPEED: f32 = 6.0;
+const MIN_SPEED: f32 = 3.0;
+const MAX_TURN: f32 = 3.0;
+
 
 #[derive(PartialEq)]
 struct Boid {
     pos: Vec2,
-    vel: Vec2
+    vel: Vec2,
 }
 
 impl Boid {
     fn new(x: f32, y: f32) -> Self {
         let vel = Vec2::new(
-            rand::gen_range(-5.0, 5.0), // random start speed
+            rand::gen_range(-5.0, 5.0),
             rand::gen_range(-5.0, 5.0),
         );
-        
         Self {
             pos: Vec2::new(x, y),
-            vel: vel
+            vel,
         }
     }
 }
 
 struct World {
-    boids: Vec<Boid>
+    boids: Vec<Boid>,
 }
 
 impl World {
@@ -48,41 +55,49 @@ impl World {
     fn handle_click(&mut self) {
         if is_mouse_button_pressed(MouseButton::Left) {
             let (x, y) = mouse_position();
-            self.boids.push(Boid::new(x, y))
+            self.boids.push(Boid::new(x, y));
         }
     }
 
     fn draw(&self) {
         for boid in &self.boids {
-            draw_circle(boid.pos.x, boid.pos.y, 2.0, WHITE);
+            // boid wird als gleich-schenkliges dreieck gezeichnet das die richtung anzeigt
+            let angle = boid.vel.y.atan2(boid.vel.x);
+            let size = 6.0;
+            let p1 = boid.pos + Vec2::from_angle(angle) * size;
+            let p2 = boid.pos + Vec2::from_angle(angle + 2.5) * size * 0.6;
+            let p3 = boid.pos + Vec2::from_angle(angle - 2.5) * size * 0.6;
+            draw_triangle(p1, p2, p3, WHITE);
         }
     }
-    
-    fn alignment(&mut self) -> Vec<Vec2> { // boids versuchen den speed der umliegenden boids (im sichtfeld) zu matchen
+
+    fn alignment(&self) -> Vec<Vec2> { // wie doll die boids den speed von den anderen matchen wollen
         let mut changed_vels = vec![];
         for self_boid in &self.boids {
-            let mut boids_vel: Vec2 = Vec2::ZERO;
-            let mut neighbors: f32 = 0.0;
+            let mut boids_vel = Vec2::ZERO;
+            let mut neighbors = 0.0;
             for other_boid in &self.boids {
+                if self_boid == other_boid {
+                    continue;
+                }
                 let distance = self_boid.pos.distance(other_boid.pos);
-                if distance <= VISUAL_RANGE && distance >= AVOIDDISTANCE { // hoffe das zweite hilft: && distance >= AVOIDDISTANCE 
+                if distance < VISUAL_RANGE { // alle boids in der range
                     boids_vel += other_boid.vel;
-                    neighbors += 1.0
+                    neighbors += 1.0;
                 }
             }
             if neighbors > 0.0 {
-                let avg_speed = boids_vel / neighbors;
-                let new_boid_speed = (avg_speed.normalize() - self_boid.vel.normalize())  * ALIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
-                changed_vels.push(new_boid_speed)
-            }
-            else {
-                changed_vels.push(Vec2::ZERO)
+                let avg_vel = boids_vel / neighbors;
+                let adjustment = (avg_vel - self_boid.vel) * ALIGNMENTFACTOR;
+                changed_vels.push(adjustment);
+            } else {
+                changed_vels.push(Vec2::ZERO);
             }
         }
         changed_vels
     }
 
-    fn separation(&self) -> Vec<Vec2> { // boids wollen sich nicht zu nahe kommen
+    fn separation(&self) -> Vec<Vec2> { // abstand zwischen den boids
         let mut changed_vels = vec![];
         for self_boid in &self.boids {
             let mut move_away = Vec2::ZERO;
@@ -90,11 +105,10 @@ impl World {
                 if self_boid == other_boid {
                     continue;
                 }
-                let distance = self_boid.pos.distance(other_boid.pos); // feature von macroqaud, basicly satz des pythagoras mit den vectoren
+                let distance = self_boid.pos.distance(other_boid.pos);
                 if distance < AVOIDDISTANCE && distance > 0.0 {
                     let diff = self_boid.pos - other_boid.pos;
-                    move_away += diff.normalize() / distance;  // stronger when close
-                    
+                    move_away += diff / distance;
                 }
             }
             move_away *= AVOIDFACTOR;
@@ -103,52 +117,54 @@ impl World {
         changed_vels
     }
 
-    fn cohesion(&mut self) -> Vec<Vec2> { // boids steuern richtung durschschnittliche koordinaten der umliegenden boids (im sichtfeld)
+    fn cohesion(&self) -> Vec<Vec2> { // wie doll die boids zur durchschnitts pos der anderen fliegen will
         let mut changed_vels = vec![];
         for self_boid in &self.boids {
-            let mut boids_pos: Vec2 = Vec2::ZERO;
-            let mut neighbors: f32 = 0.0;
+            let mut center = Vec2::ZERO;
+            let mut neighbors = 0.0;
             for other_boid in &self.boids {
+                if self_boid == other_boid {
+                    continue;
+                }
                 let distance = self_boid.pos.distance(other_boid.pos);
-                if distance <= VISUAL_RANGE && distance >= AVOIDDISTANCE {
-                    boids_pos += other_boid.pos;
-                    neighbors += 1.0
+                if distance < VISUAL_RANGE {
+                    center += other_boid.pos;
+                    neighbors += 1.0;
                 }
             }
             if neighbors > 0.0 {
-                let boids_avr_pos = boids_pos / neighbors;
-                let new_boid_speed = (boids_avr_pos - self_boid.pos) * COHERENCE; // boid versucht zur durchschnittlichen position zu steuern
-                changed_vels.push(new_boid_speed)
-            }
-            else {
-                changed_vels.push(Vec2::ZERO)
+                let avg_pos = center / neighbors;
+                let adjustment = (avg_pos - self_boid.pos) * COHERENCE;
+                changed_vels.push(adjustment);
+            } else {
+                changed_vels.push(Vec2::ZERO);
             }
         }
         changed_vels
     }
 
-    fn check_edge(&self) -> Vec<Vec2> { // should work 
+    fn check_edge(&self) -> Vec<Vec2> { // boid wird von den seiten weggetrieben
         let mut changed_vels = vec![];
         for boid in &self.boids {
             let mut move_away = Vec2::ZERO;
-            if boid.pos.x > SCREEN_WIDTH as f32 - EDGE_DISTANCE {
-                move_away.x -= TURNFACTOR
-            } else if boid.pos.x < EDGE_DISTANCE {
-                move_away.x += TURNFACTOR
+            if boid.pos.x < EDGE_DISTANCE {
+                move_away.x += TURNFACTOR;
+            } else if boid.pos.x > SCREEN_WIDTH as f32 - EDGE_DISTANCE {
+                move_away.x -= TURNFACTOR;
             }
 
-            if boid.pos.y > SCREEN_HEIGHT as f32 - EDGE_DISTANCE {
-                move_away.y -= TURNFACTOR
-            } else if boid.pos.y < EDGE_DISTANCE {
-                move_away.y += TURNFACTOR
+            if boid.pos.y < EDGE_DISTANCE {
+                move_away.y += TURNFACTOR;
+            } else if boid.pos.y > SCREEN_HEIGHT as f32 - EDGE_DISTANCE {
+                move_away.y -= TURNFACTOR;
             }
             changed_vels.push(move_away);
         }
         changed_vels
     }
 
-    fn update_velocities(&mut self) -> Vec<Vec2> { // added alles zusammen
-        if self.boids.is_empty() { // damit kein panic wenn keine boids da
+    fn update_velocities(&mut self) -> Vec<Vec2> {
+        if self.boids.is_empty() {
             return vec![];
         }
 
@@ -157,14 +173,14 @@ impl World {
         let cohesion = self.cohesion();
         let edge_avoid = self.check_edge();
 
-        let mut final_vels = vec![Vec2::ZERO; self.boids.len()]; // vektor direkt mit richtiger länge
+        let mut final_vels = vec![Vec2::ZERO; self.boids.len()]; // das letzere muss iwe weil dann die größe des vecs bekannt ist
 
-        for i in 0..self.boids.len() {
+        for i in 0..self.boids.len() { // alles addieren
             final_vels[i] =
-                alignment[i].clamp_length_max(1.0) * 0.5 +
-                separation[i].clamp_length_max(1.0) * 1.5 +
-                cohesion[i].clamp_length_max(1.0) * 0.2 +
-                edge_avoid[i].clamp_length_max(1.0) * 1.0;
+                alignment[i] * 0.5 +
+                separation[i] * 2.0 +
+                cohesion[i] * 0.4 +
+                edge_avoid[i] * 1.0;
         }
 
         final_vels
@@ -178,33 +194,30 @@ impl World {
         let updated_vels = self.update_velocities();
 
         for i in 0..self.boids.len() {
-            // neue velocity
-
             let old_vel = self.boids[i].vel;
-
             self.boids[i].vel += updated_vels[i];
 
-            self.boids[i].vel += Vec2::new(gen_range(-0.1, 0.1), gen_range(-0.1, 0.1)); // bisschen randomizen
+            // bisschen randomniss
+            self.boids[i].vel += Vec2::new(gen_range(-0.1, 0.1), gen_range(-0.1, 0.1));
 
-            // max speed
+            // tempolimit damit die werte nicht unednlich groß werden können
             let speed = self.boids[i].vel.length();
-            let max_speed = 15.0;
-            let min_speed = 5.0;
-            if speed > max_speed {
-                self.boids[i].vel = self.boids[i].vel.normalize() * max_speed;
+            if speed > MAX_SPEED {
+                self.boids[i].vel = self.boids[i].vel.normalize() * MAX_SPEED;
             }
-            if speed < min_speed {
-                self.boids[i].vel = self.boids[i].vel.normalize() * min_speed;
+            if speed < MIN_SPEED {
+                self.boids[i].vel = self.boids[i].vel.normalize() * MIN_SPEED;
             }
 
-            let max_turn = 1.0; // how much they can turn per frame
+            // wie doll sich der vector veräändern darf
             let vel_change = self.boids[i].vel - old_vel;
-            if vel_change.length() > max_turn {
-                self.boids[i].vel = old_vel + vel_change.normalize() * max_turn;
+            if vel_change.length() > MAX_TURN {
+                self.boids[i].vel = old_vel + vel_change.normalize() * MAX_TURN;
             }
-            // update pos
+
+            // Move boid
             let vel = self.boids[i].vel;
-            self.boids[i].pos += vel; 
+            self.boids[i].pos += vel;
         }
     }
 
@@ -219,23 +232,21 @@ impl World {
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Swarm Sim".to_string(),
+        window_title: "Boids Simulation (Macroquad)".to_string(),
         window_width: SCREEN_WIDTH,
         window_height: SCREEN_HEIGHT,
         fullscreen: false,
         ..Default::default()
     }
 }
-
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut world = World::new();
-
-    world.spawn_boids(100);
+    world.spawn_boids(300);
 
     loop {
         clear_background(BLACK);
-        
+
         world.handle_click();
         world.update();
         world.draw();
