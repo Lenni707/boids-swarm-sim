@@ -1,18 +1,20 @@
 use macroquad::prelude::*;
+use macroquad::rand::gen_range;
 
 // todo: Werter anpassen, jeweilige kraft limitieren damit eines nicht zu stark wird
 // https://vanhunteradams.com/Pico/Animal_Movement/Boids-algorithm.html
 
+const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
-const SCREEN_WIDTH: i32 = 1600;
 
-const VISUAL_RANGE: f32 = 75.0;          
+const VISUAL_RANGE: f32 = 100.0;          
 const COHERENCE: f32 = 0.0005;            
-const AVOIDFACTOR: f32 = 0.0002;          
-const AVOIDDISTANCE: f32 = 50.0;         
-const ALLIGNMENTFACTOR: f32 = 0.01;      
+const AVOIDFACTOR: f32 = 0.15;          
+const AVOIDDISTANCE: f32 = 30.0;         
+const ALIGNMENTFACTOR: f32 = 0.05;      
 
-const EDGE_DISTANCE: f32 = 100.0;  
+const TURNFACTOR: f32 = 0.4;
+const EDGE_DISTANCE: f32 = 50.0;  
 
 #[derive(PartialEq)]
 struct Boid {
@@ -29,7 +31,7 @@ impl Boid {
         
         Self {
             pos: Vec2::new(x, y),
-            vel
+            vel: vel
         }
     }
 }
@@ -52,7 +54,7 @@ impl World {
 
     fn draw(&self) {
         for boid in &self.boids {
-            draw_circle(boid.pos.x, boid.pos.y, 10.0, BLUE);
+            draw_circle(boid.pos.x, boid.pos.y, 2.0, WHITE);
         }
     }
     
@@ -63,14 +65,14 @@ impl World {
             let mut neighbors: f32 = 0.0;
             for other_boid in &self.boids {
                 let distance = self_boid.pos.distance(other_boid.pos);
-                if distance <= VISUAL_RANGE { // hoffe das zweite hilft && distance >= AVOIDDISTANCE 
+                if distance <= VISUAL_RANGE && distance >= AVOIDDISTANCE { // hoffe das zweite hilft: && distance >= AVOIDDISTANCE 
                     boids_vel += other_boid.vel;
                     neighbors += 1.0
                 }
             }
             if neighbors > 0.0 {
-                let avg_spped = boids_vel / neighbors;
-                let new_boid_speed = (avg_spped - self_boid.vel)  * ALLIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
+                let avg_speed = boids_vel / neighbors;
+                let new_boid_speed = (avg_speed - self_boid.vel)  * ALIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
                 changed_vels.push(new_boid_speed)
             }
             else {
@@ -89,11 +91,13 @@ impl World {
                     continue;
                 }
                 let distance = self_boid.pos.distance(other_boid.pos); // feature von macroqaud, basicly satz des pythagoras mit den vectoren
-                if distance < AVOIDDISTANCE {
-                    // je näher desto mehr wollen die weg
-                    move_away += (self_boid.pos - other_boid.pos) * AVOIDFACTOR;
+                if distance < AVOIDDISTANCE && distance > 0.0 {
+                    let diff = self_boid.pos - other_boid.pos;
+                    move_away += diff.normalize() / distance;  // stronger when close
+                    
                 }
             }
+            move_away *= AVOIDFACTOR;
             changed_vels.push(move_away);
         }
         changed_vels
@@ -106,16 +110,14 @@ impl World {
             let mut neighbors: f32 = 0.0;
             for other_boid in &self.boids {
                 let distance = self_boid.pos.distance(other_boid.pos);
-                if distance <= VISUAL_RANGE {
+                if distance <= VISUAL_RANGE && distance >= AVOIDDISTANCE {
                     boids_pos += other_boid.pos;
                     neighbors += 1.0
                 }
             }
             if neighbors > 0.0 {
                 let boids_avr_pos = boids_pos / neighbors;
-
                 let new_boid_speed = (boids_avr_pos - self_boid.pos) * COHERENCE; // boid versucht zur durchschnittlichen position zu steuern
-
                 changed_vels.push(new_boid_speed)
             }
             else {
@@ -125,24 +127,20 @@ impl World {
         changed_vels
     }
 
-    fn check_edge(&mut self) -> Vec<Vec2> {
+    fn check_edge(&self) -> Vec<Vec2> { // should work 
         let mut changed_vels = vec![];
         for boid in &self.boids {
             let mut move_away = Vec2::ZERO;
             if boid.pos.x > SCREEN_WIDTH as f32 - EDGE_DISTANCE {
-                let dist = boid.pos.x - (SCREEN_WIDTH as f32 - EDGE_DISTANCE);
-                move_away += Vec2::new(-dist * 0.2, 0.0); // push left
+                move_away.x -= TURNFACTOR
             } else if boid.pos.x < EDGE_DISTANCE {
-                let dist = EDGE_DISTANCE - boid.pos.x;
-                move_away += Vec2::new(dist * 0.2, 0.0); // push right
+                move_away.x += TURNFACTOR
             }
 
             if boid.pos.y > SCREEN_HEIGHT as f32 - EDGE_DISTANCE {
-                let dist = boid.pos.y - (SCREEN_HEIGHT as f32 - EDGE_DISTANCE);
-                move_away += Vec2::new(0.0, -dist * 0.2); // push up
+                move_away.y -= TURNFACTOR
             } else if boid.pos.y < EDGE_DISTANCE {
-                let dist = EDGE_DISTANCE - boid.pos.y;
-                move_away += Vec2::new(0.0, dist * 0.2); // push down
+                move_away.y += TURNFACTOR
             }
             changed_vels.push(move_away);
         }
@@ -177,16 +175,40 @@ impl World {
 
         for i in 0..self.boids.len() {
             // neue velocity
+
+            let old_vel = self.boids[i].vel;
+
             self.boids[i].vel += updated_vels[i];
+
+            self.boids[i].vel += Vec2::new(gen_range(-0.1, 0.1), gen_range(-0.1, 0.1)); // bisschen randomizen
 
             // max speed
             let speed = self.boids[i].vel.length();
-            let max_speed = 5.0;
+            let max_speed = 6.0;
+            let min_speed = 3.0;
             if speed > max_speed {
                 self.boids[i].vel = self.boids[i].vel.normalize() * max_speed;
             }
+            if speed < min_speed {
+                self.boids[i].vel = self.boids[i].vel.normalize() * min_speed;
+            }
+
+            let max_turn = 0.5; // how much they can turn per frame
+            let vel_change = self.boids[i].vel - old_vel;
+            if vel_change.length() > max_turn {
+                self.boids[i].vel = old_vel + vel_change.normalize() * max_turn;
+            }
+            // update pos
             let vel = self.boids[i].vel;
-            self.boids[i].pos += vel;
+            self.boids[i].pos += vel; 
+        }
+    }
+
+    fn spawn_boids(&mut self, number: usize) {
+        for _ in 0..number {
+            let x = rand::gen_range(0.0, screen_width());
+            let y = rand::gen_range(0.0, screen_height());
+            self.boids.push(Boid::new(x, y));
         }
     }
 }
@@ -205,9 +227,11 @@ fn window_conf() -> Conf {
 async fn main() {
     let mut world = World::new();
 
+    world.spawn_boids(300);
+
     loop {
         clear_background(BLACK);
-
+        
         world.handle_click();
         world.update();
         world.draw();
