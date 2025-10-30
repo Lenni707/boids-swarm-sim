@@ -48,17 +48,22 @@ impl World {
     
     fn alignment(&mut self) -> Vec<Vec2> { // boids versuchen den speed der umliegenden boids (im sichtfeld) zu matchen
         let mut changed_vels = vec![];
-        let mut boids_vel: Vec2 = Vec2::ZERO;
-        let mut neighbors: f32 = 0.0;
         for self_boid in &self.boids {
+            let mut boids_vel: Vec2 = Vec2::ZERO;
+            let mut neighbors: f32 = 0.0;
             for other_boid in &self.boids {
                 let distance = self_boid.pos.distance(other_boid.pos);
                 if distance <= VISUAL_RANGE {
                     boids_vel += other_boid.vel;
                     neighbors += 1.0
                 }
+            }
+            if neighbors > 0.0 {
                 let new_boid_speed = (boids_vel / neighbors) - self_boid.vel * ALLIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
                 changed_vels.push(new_boid_speed)
+            }
+            else {
+                changed_vels.push(Vec2::ZERO)
             }
         }
         changed_vels
@@ -66,8 +71,8 @@ impl World {
 
     fn separation(&self) -> Vec<Vec2> { // boids wollen sich nicht zu nahe kommen
         let mut changed_vels = vec![];
-        let mut move_away = Vec2::ZERO;
         for self_boid in &self.boids {
+            let mut move_away = Vec2::ZERO;
             for other_boid in &self.boids {
                 if self_boid == other_boid {
                     continue;
@@ -85,20 +90,25 @@ impl World {
 
     fn cohesion(&mut self) -> Vec<Vec2> { // boids steuern richtung durschschnittliche koordinaten der umliegenden boids (im sichtfeld)
         let mut changed_vels = vec![];
-        let mut boids_pos: Vec2 = Vec2::ZERO;
-        let mut neighbors: f32 = 0.0;
         for self_boid in &self.boids {
+            let mut boids_pos: Vec2 = Vec2::ZERO;
+        let mut neighbors: f32 = 0.0;
             for other_boid in &self.boids {
                 let distance = self_boid.pos.distance(other_boid.pos);
                 if distance <= VISUAL_RANGE {
                     boids_pos += other_boid.pos;
                     neighbors += 1.0
                 }
+            }
+            if neighbors > 0.0 {
                 let boids_avr_pos = boids_pos / neighbors;
 
                 let new_boid_speed = (boids_avr_pos - self_boid.pos) * COHERENCE; // boid versucht zur durchschnittlichen position zu steuern
 
                 changed_vels.push(new_boid_speed)
+            }
+            else {
+                changed_vels.push(Vec2::ZERO)
             }
         }
         changed_vels
