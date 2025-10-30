@@ -7,14 +7,17 @@ use macroquad::rand::gen_range;
 const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
 
-const VISUAL_RANGE: f32 = 40.0;          
-const COHERENCE: f32 = 0.005;            
+const VISUAL_RANGE: f32 = 50.0;          
+const COHERENCE: f32 = 0.002;            
 const AVOIDFACTOR: f32 = 0.05;          
-const AVOIDDISTANCE: f32 = 8.0;         
+const AVOIDDISTANCE: f32 = 15.0;         
 const ALIGNMENTFACTOR: f32 = 0.05;      
 
 const TURNFACTOR: f32 = 0.4;
 const EDGE_DISTANCE: f32 = 50.0;  
+
+const MAX_SPEED: f32 = 3.0;    // maximale Geschwindigkeit
+const MIN_SPEED: f32 = 1.0;    // minimale Geschwindigkeit (damit sie nicht stehen bleiben)
 
 #[derive(PartialEq)]
 struct Boid {
@@ -31,7 +34,7 @@ impl Boid {
         
         Self {
             pos: Vec2::new(x, y),
-            vel: vel
+            vel
         }
     }
 }
@@ -51,13 +54,18 @@ impl World {
             self.boids.push(Boid::new(x, y))
         }
     }
-
+    
     fn draw(&self) {
         for boid in &self.boids {
-            draw_circle(boid.pos.x, boid.pos.y, 2.0, WHITE);
+            // +90° damit Dreieck in Bewegungsrichtung zeigt
+            draw_poly(boid.pos.x, boid.pos.y, 3, 6.0, World::calc_heading(boid.vel) + 90.0, WHITE);
         }
     }
-    
+
+    fn calc_heading(v: Vec2) -> f32 {
+        v.y.atan2(v.x).to_degrees()
+    }
+
     fn alignment(&mut self) -> Vec<Vec2> { // boids versuchen den speed der umliegenden boids (im sichtfeld) zu matchen
         let mut changed_vels = vec![];
         for self_boid in &self.boids {
@@ -72,10 +80,10 @@ impl World {
             }
             if neighbors > 0.0 {
                 let avg_speed = boids_vel / neighbors;
-                let new_boid_speed = (avg_speed.normalize() - self_boid.vel.normalize())  * ALIGNMENTFACTOR; // also der durchschnittspeed minus den self boid durch den alligment faktor heißt er Versucht sich an den durchschnitt anzupassen
+                // weniger jitter -> kein normalize() hier
+                let new_boid_speed = (avg_speed - self_boid.vel) * ALIGNMENTFACTOR; 
                 changed_vels.push(new_boid_speed)
-            }
-            else {
+            } else {
                 changed_vels.push(Vec2::ZERO)
             }
         }
@@ -94,7 +102,6 @@ impl World {
                 if distance < AVOIDDISTANCE && distance > 0.0 {
                     let diff = self_boid.pos - other_boid.pos;
                     move_away += diff.normalize() / distance;  // stronger when close
-                    
                 }
             }
             move_away *= AVOIDFACTOR;
@@ -119,15 +126,14 @@ impl World {
                 let boids_avr_pos = boids_pos / neighbors;
                 let new_boid_speed = (boids_avr_pos - self_boid.pos) * COHERENCE; // boid versucht zur durchschnittlichen position zu steuern
                 changed_vels.push(new_boid_speed)
-            }
-            else {
+            } else {
                 changed_vels.push(Vec2::ZERO)
             }
         }
         changed_vels
     }
 
-    fn check_edge(&self) -> Vec<Vec2> { // should work 
+    fn check_edge(&self) -> Vec<Vec2> { // boids drehen ab bevor sie an die Wand stoßen
         let mut changed_vels = vec![];
         for boid in &self.boids {
             let mut move_away = Vec2::ZERO;
@@ -160,11 +166,18 @@ impl World {
         let mut final_vels = vec![Vec2::ZERO; self.boids.len()]; // vektor direkt mit richtiger länge
 
         for i in 0..self.boids.len() {
-            final_vels[i] =
-                alignment[i].clamp_length_max(1.0) * 0.5 +
-                separation[i].clamp_length_max(1.0) * 1.5 +
-                cohesion[i].clamp_length_max(1.0) * 0.2 +
-                edge_avoid[i].clamp_length_max(1.0) * 1.0;
+            let mut change = 
+                alignment[i] +
+                separation[i] +
+                cohesion[i] +
+                edge_avoid[i];
+
+            // normalize sum -> gleichmäßigere Bewegung
+            if change.length() > 1.0 {
+                change = change.normalize();
+            }
+
+            final_vels[i] = change;
         }
 
         final_vels
@@ -178,33 +191,17 @@ impl World {
         let updated_vels = self.update_velocities();
 
         for i in 0..self.boids.len() {
-            // neue velocity
-
-            let old_vel = self.boids[i].vel;
-
             self.boids[i].vel += updated_vels[i];
 
-            self.boids[i].vel += Vec2::new(gen_range(-0.1, 0.1), gen_range(-0.1, 0.1)); // bisschen randomizen
-
-            // max speed
+            // Geschwindigkeit limitieren -> stabilere Bewegung
             let speed = self.boids[i].vel.length();
-            let max_speed = 15.0;
-            let min_speed = 5.0;
-            if speed > max_speed {
-                self.boids[i].vel = self.boids[i].vel.normalize() * max_speed;
+            if speed > MAX_SPEED {
+                self.boids[i].vel = self.boids[i].vel.normalize() * MAX_SPEED;
+            } else if speed < MIN_SPEED {
+                self.boids[i].vel = self.boids[i].vel.normalize() * MIN_SPEED;
             }
-            if speed < min_speed {
-                self.boids[i].vel = self.boids[i].vel.normalize() * min_speed;
-            }
-
-            let max_turn = 1.0; // how much they can turn per frame
-            let vel_change = self.boids[i].vel - old_vel;
-            if vel_change.length() > max_turn {
-                self.boids[i].vel = old_vel + vel_change.normalize() * max_turn;
-            }
-            // update pos
-            let vel = self.boids[i].vel;
-            self.boids[i].pos += vel; 
+            let vel = self.boids[i].vel; 
+            self.boids[i].pos += vel;
         }
     }
 
