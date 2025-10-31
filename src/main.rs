@@ -1,5 +1,6 @@
 use macroquad::prelude::*;
 use macroquad::rand::gen_range;
+use std::collections::HashMap;
 
 // -!TODO!- 
 // - so ein cone für die sicht des boids adden damit er z.b nicht hinter sich gucken kann
@@ -12,9 +13,11 @@ const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
 
 const VISUAL_RANGE: f32 = 75.0;           // sight distance
-const COHERENCE: f32 = 0.002;             // how much boids move toward group center
-const AVOIDFACTOR: f32 = 0.05;            // how strongly they avoid others // war mal 0.08
+const VISUAL_RANGE_SQ: f32 = VISUAL_RANGE * VISUAL_RANGE;  // für distance_squared optimization
+const COHERENCE: f32 = 0.0025;             // how much boids move toward group center
+const AVOIDFACTOR: f32 = 0.1;            // how strongly they avoid others // war mal 0.08
 const AVOIDDISTANCE: f32 = 20.0;          // minimum allowed distance between boids
+const AVOIDDISTANCE_SQ: f32 = AVOIDDISTANCE * AVOIDDISTANCE;  // für distance_squared optimization
 const ALIGNMENTFACTOR: f32 = 0.05;        // how strongly they match neighbor velocity
 
 const TURNFACTOR: f32 = 0.2;              // how fast they turn near edges
@@ -23,6 +26,8 @@ const EDGE_DISTANCE: f32 = 100.0;         // how close to edge before turning
 const MAX_SPEED: f32 = 6.0;
 const MIN_SPEED: f32 = 3.0;
 const MAX_TURN: f32 = 3.0;
+
+const CELL_SIZE: f32 = 75.0;              // spatial partitioning cell size (same as VISUAL_RANGE)
 
 
 #[derive(PartialEq)]
@@ -52,13 +57,61 @@ impl Boid {
     }
 }
 
+// Spatial partitioning grid
+struct SpatialGrid {
+    cells: HashMap<(i32, i32), Vec<usize>>,
+}
+
+impl SpatialGrid {
+    fn new() -> Self {
+        Self {
+            cells: HashMap::new(),
+        }
+    }
+
+    // gibt die cell koordinaten für eine position zurück
+    fn get_cell_coords(&self, pos: Vec2) -> (i32, i32) {
+        ((pos.x / CELL_SIZE) as i32, (pos.y / CELL_SIZE) as i32)
+    }
+
+    // baut das grid neu auf basierend auf aktuellen boid positionen
+    fn rebuild(&mut self, boids: &[Boid]) {
+        self.cells.clear();
+        for (i, boid) in boids.iter().enumerate() {
+            let cell = self.get_cell_coords(boid.pos);
+            self.cells.entry(cell).or_insert_with(Vec::new).push(i);
+        }
+    }
+
+    // gibt alle nachbar boids zurück (9 cells: current + 8 umliegende)
+    fn get_neighbors(&self, pos: Vec2) -> Vec<usize> {
+        let (cx, cy) = self.get_cell_coords(pos);
+        let mut neighbors = Vec::new();
+
+        for dx in -1..=1 {
+            for dy in -1..=1 {
+                if let Some(indices) = self.cells.get(&(cx + dx, cy + dy)) {
+                    neighbors.extend(indices);
+                }
+            }
+        }
+        neighbors
+    }
+}
+
 struct World {
     boids: Vec<Boid>,
+    grid: SpatialGrid,              // spatial partitioning grid
+    velocity_buffer: Vec<Vec2>,     // wiederverwendbarer buffer für velocity updates (eliminiert per-frame allocations)
 }
 
 impl World {
     fn new() -> Self {
-        Self { boids: vec![] }
+        Self {
+            boids: vec![],
+            grid: SpatialGrid::new(),
+            velocity_buffer: vec![],
+        }
     }
 
     fn handle_click(&mut self) {
@@ -74,118 +127,94 @@ impl World {
         }
     }
 
-    fn alignment(&self) -> Vec<Vec2> { // wie doll die boids den speed von den anderen matchen wollen
-        let mut changed_vels = vec![];
-        for self_boid in &self.boids {
-            let mut boids_vel = Vec2::ZERO;
-            let mut neighbors = 0.0;
-            for other_boid in &self.boids {
-                if self_boid == other_boid {
+    // OPTIMIERT: kombiniert alignment, separation, cohesion in einer loop
+    // cached distance calculations, nutzt spatial grid für neighbor lookup
+    fn calculate_flocking_forces(&mut self) {
+        for (i, self_boid) in self.boids.iter().enumerate() {
+            // spatial grid: nur nachbarn in nahen cells checken statt alle boids
+            let neighbor_indices = self.grid.get_neighbors(self_boid.pos);
+
+            let mut align_sum = Vec2::ZERO;       // wie doll die boids den speed von den anderen matchen wollen
+            let mut cohesion_sum = Vec2::ZERO;    // wie doll die boids zur durchschnitts pos der anderen fliegen will
+            let mut separate_vel = Vec2::ZERO;    // abstand zwischen den boids
+            let mut neighbor_count = 0.0;
+
+            // nur durch spatial neighbors loopen statt alle boids
+            for &neighbor_idx in &neighbor_indices {
+                if i == neighbor_idx {
                     continue;
                 }
-                let distance = self_boid.pos.distance(other_boid.pos);
-                if distance < VISUAL_RANGE { // alle boids in der range
-                    boids_vel += other_boid.vel;
-                    neighbors += 1.0;
+                let other_boid = &self.boids[neighbor_idx];
+
+                // CACHED: distance nur EINMAL berechnen statt 3x
+                let diff = self_boid.pos - other_boid.pos;
+                let dist_sq = diff.length_squared();  // distance_squared ist schneller (kein sqrt)
+
+                // Alignment & Cohesion: alle boids in der range
+                if dist_sq < VISUAL_RANGE_SQ {
+                    align_sum += other_boid.vel;
+                    cohesion_sum += other_boid.pos;
+                    neighbor_count += 1.0;
+                }
+
+                // Separation: minimum allowed distance zwischen boids
+                if dist_sq < AVOIDDISTANCE_SQ && dist_sq > 0.0 {
+                    let distance = dist_sq.sqrt();  // nur hier brauchen wir die echte distance
+                    separate_vel += diff / distance;
                 }
             }
-            if neighbors > 0.0 {
-                let avg_vel = boids_vel / neighbors;
-                let adjustment = (avg_vel - self_boid.vel) * ALIGNMENTFACTOR;
-                changed_vels.push(adjustment);
-            } else {
-                changed_vels.push(Vec2::ZERO);
+
+            // durchschnitt berechnen und adjustment anwenden
+            let mut adjustment = Vec2::ZERO;
+
+            if neighbor_count > 0.0 {
+                // alignment: match neighbor velocity
+                let avg_vel = align_sum / neighbor_count;
+                adjustment += (avg_vel - self_boid.vel) * ALIGNMENTFACTOR;
+
+                // cohesion: move toward group center
+                let avg_pos = cohesion_sum / neighbor_count;
+                adjustment += (avg_pos - self_boid.pos) * COHERENCE;
             }
+
+            // separation: avoid others
+            adjustment += separate_vel * AVOIDFACTOR;
+
+            // in wiederverwendbarem buffer speichern (keine allocation)
+            self.velocity_buffer[i] = adjustment;
         }
-        changed_vels
     }
 
-    fn separation(&self) -> Vec<Vec2> { // abstand zwischen den boids
-        let mut changed_vels = vec![];
-        for self_boid in &self.boids {
-            let mut move_away = Vec2::ZERO;
-            for other_boid in &self.boids {
-                if self_boid == other_boid {
-                    continue;
-                }
-                let distance = self_boid.pos.distance(other_boid.pos);
-                if distance < AVOIDDISTANCE && distance > 0.0 {
-                    let diff = self_boid.pos - other_boid.pos;
-                    move_away += diff / distance;
-                }
-            }
-            move_away *= AVOIDFACTOR;
-            changed_vels.push(move_away);
-        }
-        changed_vels
-    }
-
-    fn cohesion(&self) -> Vec<Vec2> { // wie doll die boids zur durchschnitts pos der anderen fliegen will
-        let mut changed_vels = vec![];
-        for self_boid in &self.boids {
-            let mut center = Vec2::ZERO;
-            let mut neighbors = 0.0;
-            for other_boid in &self.boids {
-                if self_boid == other_boid {
-                    continue;
-                }
-                let distance = self_boid.pos.distance(other_boid.pos);
-                if distance < VISUAL_RANGE {
-                    center += other_boid.pos;
-                    neighbors += 1.0;
-                }
-            }
-            if neighbors > 0.0 {
-                let avg_pos = center / neighbors;
-                let adjustment = (avg_pos - self_boid.pos) * COHERENCE;
-                changed_vels.push(adjustment);
-            } else {
-                changed_vels.push(Vec2::ZERO);
-            }
-        }
-        changed_vels
-    }
-
-    fn update_velocities(&mut self) -> Vec<Vec2> {
-        if self.boids.is_empty() {
-            return vec![];
-        }
-
-        let alignment = self.alignment();
-        let separation = self.separation();
-        let cohesion = self.cohesion();
-
-
-        let edge_avoid = check_edge_boids(&self.boids);
-
-        let mut final_vels = vec![Vec2::ZERO; self.boids.len()]; // das letzere muss iwe weil dann die größe des vecs bekannt ist
-
-        for i in 0..self.boids.len() { // alles addieren
-            final_vels[i] =
-                alignment[i] * 0.5 +
-                separation[i] * 2.0 +
-                cohesion[i] * 0.4 +
-                edge_avoid[i] * 1.0;
-        }
-
-        final_vels
-    }
-
-    fn update(&mut self) {
+    fn update_velocities(&mut self) {
         if self.boids.is_empty() {
             return;
         }
 
-        let updated_vels = self.update_velocities();
+        // buffer größe anpassen wenn nötig (nur bei boid count änderung)
+        if self.velocity_buffer.len() != self.boids.len() {
+            self.velocity_buffer.resize(self.boids.len(), Vec2::ZERO);
+        }
 
+        // spatial grid neu bauen mit aktuellen positionen
+        self.grid.rebuild(&self.boids);
+
+        // flocking forces berechnen (alignment, separation, cohesion kombiniert)
+        self.calculate_flocking_forces();
+
+        // edge avoidance berechnen
+        let edge_avoid = check_edge_boids(&self.boids);
+
+        // alles kombinieren und auf boids anwenden
         for i in 0..self.boids.len() {
             let old_vel = self.boids[i].vel;
-            self.boids[i].vel += updated_vels[i];
+
+            // alles addieren (vorher mit separaten weights, jetzt direkt in den constants)
+            self.boids[i].vel += self.velocity_buffer[i] + edge_avoid[i];
 
             // bisschen randomniss
             self.boids[i].vel += Vec2::new(gen_range(-0.1, 0.1), gen_range(-0.1, 0.1));
 
-            // tempolimit damit die werte nicht unednlich groß werden können
+            // tempolimit damit die werte nicht unendlich groß werden können
             let speed = self.boids[i].vel.length();
             if speed > MAX_SPEED {
                 self.boids[i].vel = self.boids[i].vel.normalize() * MAX_SPEED;
@@ -194,15 +223,24 @@ impl World {
                 self.boids[i].vel = self.boids[i].vel.normalize() * MIN_SPEED;
             }
 
-            // wie doll sich der vector veräändern darf
+            // wie doll sich der vector verändern darf
             let vel_change = self.boids[i].vel - old_vel;
             if vel_change.length() > MAX_TURN {
                 self.boids[i].vel = old_vel + vel_change.normalize() * MAX_TURN;
             }
+        }
+    }
 
-            // Move boid
-            let vel = self.boids[i].vel;
-            self.boids[i].pos += vel;
+    fn update(&mut self) {
+        if self.boids.is_empty() {
+            return;
+        }
+
+        self.update_velocities();
+
+        // Move boids
+        for boid in &mut self.boids {
+            boid.pos += boid.vel;
         }
     }
 
@@ -248,13 +286,14 @@ fn check_edge_positions(positions: &[Vec2]) -> Vec<Vec2> {
 
 fn window_conf() -> Conf {
     Conf {
-        window_title: "Boids Simulation (Macroquad)".to_string(),
+        window_title: "Boids Simulation (Macroquad) - OPTIMIZED".to_string(),
         window_width: SCREEN_WIDTH,
         window_height: SCREEN_HEIGHT,
         fullscreen: false,
         ..Default::default()
     }
 }
+
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut world = World::new();
