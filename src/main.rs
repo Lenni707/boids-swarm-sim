@@ -12,10 +12,10 @@ const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
 
 const VISUAL_RANGE: f32 = 75.0;           // sight distance
-const COHERENCE: f32 = 0.002;             // how much boids move toward group center
-const AVOIDFACTOR: f32 = 0.05;            // how strongly they avoid others // war mal 0.08
+const COHERENCE: f32 = 0.002 * 0.4;             // how much boids move toward group center
+const AVOIDFACTOR: f32 = 0.05 * 2.0;            // how strongly they avoid others // war mal 0.08
 const AVOIDDISTANCE: f32 = 20.0;          // minimum allowed distance between boids
-const ALIGNMENTFACTOR: f32 = 0.05;        // how strongly they match neighbor velocity
+const ALIGNMENTFACTOR: f32 = 0.05 * 0.5;        // how strongly they match neighbor velocity
 
 const TURNFACTOR: f32 = 0.2;              // how fast they turn near edges
 const EDGE_DISTANCE: f32 = 100.0;         // how close to edge before turning
@@ -162,9 +162,9 @@ impl World {
 
         for i in 0..self.boids.len() { // alles addieren
             final_vels[i] =
-                alignment[i] * 0.5 +
-                separation[i] * 2.0 +
-                cohesion[i] * 0.4 +
+                alignment[i] +
+                separation[i] +
+                cohesion[i] +
                 edge_avoid[i] * 1.0;
         }
 
