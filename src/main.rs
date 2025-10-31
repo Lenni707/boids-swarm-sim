@@ -39,7 +39,7 @@ const CELL_SIZE: f32 = 75.0;              // spatial partitioning cell size (sam
 const PRED_VISUAL_RANGE: f32 = 200.0;
 const PRED_MAX_SPEED: f32 = 4.0;
 const PRED_MIN_SPEED: f32 = 1.5;
-const PRED_MAX_TURN: f32 = 0.3;
+const PRED_MAX_TURN: f32 = 2.5;
 
 
 
