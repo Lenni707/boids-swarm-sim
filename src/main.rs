@@ -15,6 +15,8 @@ const SCREEN_HEIGHT: i32 = 800;
 const VISUAL_RANGE: f32 = 75.0;           // sight distance
 const VISUAL_RANGE_SQ: f32 = VISUAL_RANGE * VISUAL_RANGE;  // für distance_squared optimization , weiß auch nicht warum danke claude <3
 
+const SEE_PRED_RANGE: f32 = 100.0;
+
 const COHERENCE: f32 = 0.002 * 0.4;             // how much boids move toward group center
 
 const AVOIDFACTOR: f32 = 0.05 * 2.0;            // how strongly they avoid others // war mal 0.08
@@ -23,14 +25,22 @@ const AVOIDDISTANCE_SQ: f32 = AVOIDDISTANCE * AVOIDDISTANCE;  // für distance_s
 
 const ALIGNMENTFACTOR: f32 = 0.05 * 0.5;        // how strongly they match neighbor velocity
 
+const FLEE_FACTOR: f32 = 0.01;             // how much they wanna flee from a pred
+
 const TURNFACTOR: f32 = 0.2;              // how fast they turn near edges
 const EDGE_DISTANCE: f32 = 100.0;         // how close to edge before turning
 
-const MAX_SPEED: f32 = 6.0;
-const MIN_SPEED: f32 = 3.0;
+const MAX_SPEED: f32 = 3.0;
+const MIN_SPEED: f32 = 1.5;
 const MAX_TURN: f32 = 3.0;
 
 const CELL_SIZE: f32 = 75.0;              // spatial partitioning cell size (same as VISUAL_RANGE)
+
+const PRED_VISUAL_RANGE: f32 = 200.0;
+const PRED_MAX_SPEED: f32 = 4.0;
+const PRED_MIN_SPEED: f32 = 1.5;
+const PRED_MAX_TURN: f32 = 0.3;
+
 
 
 #[derive(PartialEq)]
@@ -156,7 +166,64 @@ impl World {
         for boid in &self.boids {
             boid.draw(); // method defined in impl Boid
         }
+        for pred in &self.preds {
+            pred.draw()
+        }
     }
+
+    fn pred_chase_prey(&mut self) {
+        let detection_radius_sq = PRED_VISUAL_RANGE * PRED_VISUAL_RANGE;
+
+        // edge avoidance für preds
+        let edge_avoid = check_edge_preds(&self.preds);
+
+        for (i, pred) in self.preds.iter_mut().enumerate() {
+            let mut center_of_mass = Vec2::ZERO;
+            let mut count = 0;
+
+            // find boids within detection radius and calculate their average position
+            for boid in &self.boids {
+                let dist_sq = (boid.pos - pred.pos).length_squared();
+                if dist_sq < detection_radius_sq {
+                    center_of_mass += boid.pos;
+                    count += 1;
+                }
+            }
+
+            let old_vel = pred.vel;
+            let mut adjustment = Vec2::ZERO;
+
+            // if boids detected, move toward their center (highest concentration)
+            if count > 0 {
+                center_of_mass /= count as f32;
+                adjustment += (center_of_mass - pred.pos).normalize_or_zero() * 0.3;
+            }
+
+            // apply edge avoidance
+            adjustment += edge_avoid[i];
+            
+            // bisschen randomness
+            adjustment += Vec2::new(gen_range(-0.1, 0.1), gen_range(-0.1, 0.1));
+
+            pred.vel += adjustment;
+
+            // speed limits für preds
+            let speed = pred.vel.length();
+            if speed > PRED_MAX_SPEED {
+                pred.vel = pred.vel.normalize() * PRED_MAX_SPEED;
+            }
+            if speed < PRED_MIN_SPEED {
+                pred.vel = pred.vel.normalize() * PRED_MIN_SPEED;
+            }
+
+            // wie doll sich der vector verändern darf
+            let vel_change = pred.vel - old_vel;
+            if vel_change.length() > PRED_MAX_TURN {
+                pred.vel = old_vel + vel_change.normalize() * PRED_MAX_TURN;
+            }
+        }
+    }
+
 
     // OPTIMIERT: kombiniert alignment, separation, cohesion in einer loop
     // cached distance calculations, nutzt spatial grid für neighbor lookup
@@ -168,6 +235,7 @@ impl World {
             let mut align_sum = Vec2::ZERO;       // wie doll die boids den speed von den anderen matchen wollen
             let mut cohesion_sum = Vec2::ZERO;    // wie doll die boids zur durchschnitts pos der anderen fliegen will
             let mut separate_vel = Vec2::ZERO;    // abstand zwischen den boids
+            let mut flee_vec = Vec2::ZERO;        // wie doll sie flüchten vorm pred
             let mut neighbor_count = 0.0;
 
             // nur durch spatial neighbors loopen statt alle boids
@@ -195,9 +263,18 @@ impl World {
                 }
             }
 
-            // durchschnitt berechnen und adjustment anwenden
+            // boids wollen for preds fliehen
+            for pred in self.preds.iter() {
+                let distance = self_boid.pos.distance(pred.pos);
+                if distance < SEE_PRED_RANGE {
+                    flee_vec += self_boid.pos - pred.pos; // flee away from predator
+                }
+            }
+
+            // die veränderung speichern und immer dazu addieren
             let mut adjustment = Vec2::ZERO;
 
+            // wenn mehr als ein nachbar da ist, die werte durch anzahl nachbarn teilen für durchschnitt
             if neighbor_count > 0.0 {
                 let avg_vel = align_sum / neighbor_count;
                 adjustment += (avg_vel - self_boid.vel) * ALIGNMENTFACTOR;
@@ -207,6 +284,8 @@ impl World {
             }
 
             adjustment += separate_vel * AVOIDFACTOR;
+
+            adjustment += flee_vec * FLEE_FACTOR;
 
             self.velocity_buffer[i] = adjustment;
         }
@@ -235,7 +314,7 @@ impl World {
         for i in 0..self.boids.len() {
             let old_vel = self.boids[i].vel;
 
-            // alles addieren (vorher mit separaten weights, jetzt direkt in den constants)
+            // alles addieren
             self.boids[i].vel += self.velocity_buffer[i] + edge_avoid[i];
 
             // bisschen randomniss
@@ -263,13 +342,18 @@ impl World {
             return;
         }
 
+        self.pred_chase_prey();
         self.update_velocities();
 
-        // Move boids
         for boid in &mut self.boids {
             boid.pos += boid.vel;
         }
+        
+        for pred in &mut self.preds {
+            pred.pos += pred.vel;
+        }
     }
+
 
     fn spawn_boids(&mut self, number: usize) {
         for _ in 0..number {
@@ -285,6 +369,10 @@ impl World {
 // wandelt boids.pos in eine vec2 um
 fn check_edge_boids(boids: &[Boid]) -> Vec<Vec2> {
     check_edge_positions(&boids.iter().map(|b| b.pos).collect::<Vec<_>>())
+}
+
+fn check_edge_preds(preds: &[Pred]) -> Vec<Vec2> {
+    check_edge_positions(&preds.iter().map(|p| p.pos).collect::<Vec<_>>())
 }
 
 // macht die math und nimmt nur vec2 als parameter deswegen brauchen wir die obige umwandlungsfunktion
