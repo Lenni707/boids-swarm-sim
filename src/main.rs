@@ -17,7 +17,7 @@ const VISUAL_RANGE_SQ: f32 = VISUAL_RANGE * VISUAL_RANGE;  // für distance_squa
 
 const SEE_PRED_RANGE: f32 = 100.0;
 
-const COHERENCE: f32 = 0.002 * 0.4;             // how much boids move toward group center
+const COHERENCE: f32 = 0.002 * 0.35;             // how much boids move toward group center
 
 const AVOIDFACTOR: f32 = 0.05 * 2.0;            // how strongly they avoid others // war mal 0.08
 const AVOIDDISTANCE: f32 = 20.0;          // minimum allowed distance between boids
@@ -30,15 +30,15 @@ const FLEE_FACTOR: f32 = 0.01;             // how much they wanna flee from a pr
 const TURNFACTOR: f32 = 0.2;              // how fast they turn near edges
 const EDGE_DISTANCE: f32 = 100.0;         // how close to edge before turning
 
-const MAX_SPEED: f32 = 3.0;
-const MIN_SPEED: f32 = 1.5;
+const MAX_SPEED: f32 = 5.0;
+const MIN_SPEED: f32 = 2.5;
 const MAX_TURN: f32 = 3.0;
 
 const CELL_SIZE: f32 = 75.0;              // spatial partitioning cell size (same as VISUAL_RANGE)
 
 const PRED_VISUAL_RANGE: f32 = 200.0;
-const PRED_MAX_SPEED: f32 = 4.0;
-const PRED_MIN_SPEED: f32 = 1.5;
+const PRED_MAX_SPEED: f32 = 6.0;
+const PRED_MIN_SPEED: f32 = 3.0;
 const PRED_MAX_TURN: f32 = 2.5;
 
 
@@ -142,6 +142,7 @@ struct World {
     preds: Vec<Pred>,
     grid: SpatialGrid,              // das Grid
     velocity_buffer: Vec<Vec2>,     // wiederverwendbarer zwischenspeicher für die updates der velocity
+    mouse_chase: bool
 }
 
 impl World {
@@ -151,6 +152,7 @@ impl World {
             preds: vec![],
             grid: SpatialGrid::new(),
             velocity_buffer: vec![],
+            mouse_chase: false
         }
     }
     // spawns a pred
@@ -171,6 +173,14 @@ impl World {
         if is_key_pressed(KeyCode::Space) {
             self.spawn_boids(50);
         }
+        if is_key_pressed(KeyCode::E) {
+            if self.mouse_chase == false {
+                self.mouse_chase = true;
+            }
+            else {
+                self.mouse_chase = false;
+            }
+        }
     }
 
     fn draw(&self) {
@@ -180,6 +190,16 @@ impl World {
         for pred in &self.preds {
             pred.draw()
         }
+    }
+
+    fn draw_stats(&self) {
+        let fps = get_fps();
+        let boid_count = self.boids.len();
+        let pred_count = self.preds.len();
+        
+        draw_text(&format!("FPS: {}", fps), 10.0, 20.0, 20.0, WHITE);
+        draw_text(&format!("Boids: {}", boid_count), 10.0, 40.0, 20.0, WHITE);
+        draw_text(&format!("Preds: {}", pred_count), 10.0, 60.0, 20.0, RED);
     }
 
     fn pred_chase_prey(&mut self) {
@@ -247,6 +267,7 @@ impl World {
             let mut cohesion_sum = Vec2::ZERO;    // wie doll die boids zur durchschnitts pos der anderen fliegen will
             let mut separate_vel = Vec2::ZERO;    // abstand zwischen den boids
             let mut flee_vec = Vec2::ZERO;        // wie doll sie flüchten vorm pred
+            let mut mouse_flee_vel = Vec2::ZERO;
             let mut neighbor_count = 0.0;
 
             // nur durch spatial neighbors loopen statt alle boids
@@ -282,6 +303,14 @@ impl World {
                 }
             }
 
+            if self.mouse_chase == true {
+                let mouse_pos = Vec2::from(mouse_position());
+                let distance = self_boid.pos.distance(mouse_pos);
+                if distance < VISUAL_RANGE {
+                    mouse_flee_vel += self_boid.pos - mouse_pos
+                }
+            }
+
             // die veränderung speichern und immer dazu addieren
             let mut adjustment = Vec2::ZERO;
 
@@ -297,6 +326,8 @@ impl World {
             adjustment += separate_vel * AVOIDFACTOR;
 
             adjustment += flee_vec * FLEE_FACTOR;
+
+            adjustment += mouse_flee_vel * FLEE_FACTOR;
 
             self.velocity_buffer[i] = adjustment;
         }
@@ -430,6 +461,7 @@ async fn main() {
         world.handle_keys();
         world.update();
         world.draw();
+        world.draw_stats();
 
         next_frame().await;
     }
