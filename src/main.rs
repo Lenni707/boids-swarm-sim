@@ -60,6 +60,32 @@ impl Boid {
     }
 }
 
+struct Pred {
+    pos: Vec2,
+    vel: Vec2
+}
+
+impl Pred {
+    fn new(x: f32, y: f32) -> Self {
+        let vel = Vec2::new(
+            rand::gen_range(-5.0, 5.0),
+            rand::gen_range(-5.0, 5.0),
+        );
+        Self {
+            pos: Vec2::new(x, y),
+            vel,
+        }
+    }
+    fn draw(&self) {
+        let angle = self.vel.y.atan2(self.vel.x);
+        let size = 8.0;
+        let p1 = self.pos + Vec2::from_angle(angle) * size;
+        let p2 = self.pos + Vec2::from_angle(angle + 2.5) * size * 0.6;
+        let p3 = self.pos + Vec2::from_angle(angle - 2.5) * size * 0.6;
+        draw_triangle(p1, p2, p3, RED);
+    }
+}
+
 // Spatial partitioning grid, iwie efficienter
 struct SpatialGrid {
     cells: HashMap<(i32, i32), Vec<usize>>,
@@ -104,6 +130,7 @@ impl SpatialGrid {
 
 struct World {
     boids: Vec<Boid>,
+    preds: Vec<Pred>,
     grid: SpatialGrid,              // das Grid
     velocity_buffer: Vec<Vec2>,     // wiederverwendbarer zwischenspeicher für die updates der velocity
 }
@@ -112,15 +139,16 @@ impl World {
     fn new() -> Self {
         Self {
             boids: vec![],
+            preds: vec![],
             grid: SpatialGrid::new(),
             velocity_buffer: vec![],
         }
     }
-
+    // spawns a pred
     fn handle_click(&mut self) {
         if is_mouse_button_pressed(MouseButton::Left) {
             let (x, y) = mouse_position();
-            self.boids.push(Boid::new(x, y));
+            self.preds.push(Pred::new(x, y));
         }
     }
 
