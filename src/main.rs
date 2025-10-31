@@ -42,7 +42,6 @@ const PRED_MIN_SPEED: f32 = 1.5;
 const PRED_MAX_TURN: f32 = 2.5;
 
 
-
 #[derive(PartialEq)]
 struct Boid {
     pos: Vec2,
@@ -159,6 +158,18 @@ impl World {
         if is_mouse_button_pressed(MouseButton::Left) {
             let (x, y) = mouse_position();
             self.preds.push(Pred::new(x, y));
+        }
+    }
+
+    fn handle_keys(&mut self) {
+        if is_key_pressed(KeyCode::R) { // clear the screen
+            self.boids.clear();
+            self.preds.clear();
+            self.grid = SpatialGrid::new();
+            self.velocity_buffer.clear();
+        }
+        if is_key_pressed(KeyCode::Space) {
+            self.spawn_boids(50);
         }
     }
 
@@ -411,12 +422,12 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut world = World::new();
-    world.spawn_boids(500);
 
     loop {
         clear_background(BLACK);
 
         world.handle_click();
+        world.handle_keys();
         world.update();
         world.draw();
 
