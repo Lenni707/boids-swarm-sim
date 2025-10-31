@@ -13,12 +13,15 @@ const SCREEN_WIDTH: i32 = 1400;
 const SCREEN_HEIGHT: i32 = 800;
 
 const VISUAL_RANGE: f32 = 75.0;           // sight distance
-const VISUAL_RANGE_SQ: f32 = VISUAL_RANGE * VISUAL_RANGE;  // für distance_squared optimization
-const COHERENCE: f32 = 0.0025;             // how much boids move toward group center
-const AVOIDFACTOR: f32 = 0.1;            // how strongly they avoid others // war mal 0.08
+const VISUAL_RANGE_SQ: f32 = VISUAL_RANGE * VISUAL_RANGE;  // für distance_squared optimization , weiß auch nicht warum danke claude <3
+
+const COHERENCE: f32 = 0.002 * 0.4;             // how much boids move toward group center
+
+const AVOIDFACTOR: f32 = 0.05 * 2.0;            // how strongly they avoid others // war mal 0.08
 const AVOIDDISTANCE: f32 = 20.0;          // minimum allowed distance between boids
-const AVOIDDISTANCE_SQ: f32 = AVOIDDISTANCE * AVOIDDISTANCE;  // für distance_squared optimization
-const ALIGNMENTFACTOR: f32 = 0.05;        // how strongly they match neighbor velocity
+const AVOIDDISTANCE_SQ: f32 = AVOIDDISTANCE * AVOIDDISTANCE;  // für distance_squared optimization, weiß auch nicht warum danke claude <3
+
+const ALIGNMENTFACTOR: f32 = 0.05 * 0.5;        // how strongly they match neighbor velocity
 
 const TURNFACTOR: f32 = 0.2;              // how fast they turn near edges
 const EDGE_DISTANCE: f32 = 100.0;         // how close to edge before turning
@@ -57,7 +60,7 @@ impl Boid {
     }
 }
 
-// Spatial partitioning grid
+// Spatial partitioning grid, iwie efficienter
 struct SpatialGrid {
     cells: HashMap<(i32, i32), Vec<usize>>,
 }
@@ -101,8 +104,8 @@ impl SpatialGrid {
 
 struct World {
     boids: Vec<Boid>,
-    grid: SpatialGrid,              // spatial partitioning grid
-    velocity_buffer: Vec<Vec2>,     // wiederverwendbarer buffer für velocity updates (eliminiert per-frame allocations)
+    grid: SpatialGrid,              // das Grid
+    velocity_buffer: Vec<Vec2>,     // wiederverwendbarer zwischenspeicher für die updates der velocity
 }
 
 impl World {
@@ -131,7 +134,7 @@ impl World {
     // cached distance calculations, nutzt spatial grid für neighbor lookup
     fn calculate_flocking_forces(&mut self) {
         for (i, self_boid) in self.boids.iter().enumerate() {
-            // spatial grid: nur nachbarn in nahen cells checken statt alle boids
+            // spatial grid: nur nachbarn in nahen cells checken
             let neighbor_indices = self.grid.get_neighbors(self_boid.pos);
 
             let mut align_sum = Vec2::ZERO;       // wie doll die boids den speed von den anderen matchen wollen
@@ -146,7 +149,7 @@ impl World {
                 }
                 let other_boid = &self.boids[neighbor_idx];
 
-                // CACHED: distance nur EINMAL berechnen statt 3x
+                // einmal distance berechen -> immer wieder benutzen
                 let diff = self_boid.pos - other_boid.pos;
                 let dist_sq = diff.length_squared();  // distance_squared ist schneller (kein sqrt)
 
@@ -159,7 +162,7 @@ impl World {
 
                 // Separation: minimum allowed distance zwischen boids
                 if dist_sq < AVOIDDISTANCE_SQ && dist_sq > 0.0 {
-                    let distance = dist_sq.sqrt();  // nur hier brauchen wir die echte distance
+                    let distance = dist_sq.sqrt();
                     separate_vel += diff / distance;
                 }
             }
@@ -168,19 +171,15 @@ impl World {
             let mut adjustment = Vec2::ZERO;
 
             if neighbor_count > 0.0 {
-                // alignment: match neighbor velocity
                 let avg_vel = align_sum / neighbor_count;
                 adjustment += (avg_vel - self_boid.vel) * ALIGNMENTFACTOR;
 
-                // cohesion: move toward group center
                 let avg_pos = cohesion_sum / neighbor_count;
                 adjustment += (avg_pos - self_boid.pos) * COHERENCE;
             }
 
-            // separation: avoid others
             adjustment += separate_vel * AVOIDFACTOR;
 
-            // in wiederverwendbarem buffer speichern (keine allocation)
             self.velocity_buffer[i] = adjustment;
         }
     }
@@ -283,7 +282,6 @@ fn check_edge_positions(positions: &[Vec2]) -> Vec<Vec2> {
     adjustments
 }
 
-
 fn window_conf() -> Conf {
     Conf {
         window_title: "Boids Simulation (Macroquad) - OPTIMIZED".to_string(),
@@ -297,7 +295,7 @@ fn window_conf() -> Conf {
 #[macroquad::main(window_conf)]
 async fn main() {
     let mut world = World::new();
-    world.spawn_boids(300);
+    world.spawn_boids(500);
 
     loop {
         clear_background(BLACK);
