@@ -258,7 +258,7 @@ impl World {
 
     // OPTIMIERT: kombiniert alignment, separation, cohesion in einer loop
     // cached distance calculations, nutzt spatial grid für neighbor lookup
-    fn calculate_flocking_forces(&mut self) {
+    fn calculate_flocking_forces(&mut self, mouse_pos: Option<Vec2>) {
         for (i, self_boid) in self.boids.iter().enumerate() {
             // spatial grid: nur nachbarn in nahen cells checken
             let neighbor_indices = self.grid.get_neighbors(self_boid.pos);
@@ -303,11 +303,10 @@ impl World {
                 }
             }
 
-            if self.mouse_chase == true {
-                let mouse_pos = Vec2::from(mouse_position());
-                let distance = self_boid.pos.distance(mouse_pos);
+            if let Some(m_pos) = mouse_pos { // mouse ist wie ein predator und die mouse pos wird von dem gespeicherten teil genommen
+                let distance = self_boid.pos.distance(m_pos);
                 if distance < VISUAL_RANGE {
-                    mouse_flee_vel += self_boid.pos - mouse_pos
+                    mouse_flee_vel += self_boid.pos - m_pos
                 }
             }
 
@@ -343,11 +342,17 @@ impl World {
             self.velocity_buffer.resize(self.boids.len(), Vec2::ZERO);
         }
 
+        let mouse_pos = if self.mouse_chase { // mouse pos berechnen um in cal_flock_forces einzufügen
+            Some(Vec2::from(mouse_position()))
+        } else {
+            None
+        };
+
         // spatial grid neu bauen mit aktuellen positionen
         self.grid.rebuild(&self.boids);
 
         // flocking forces berechnen (alignment, separation, cohesion kombiniert)
-        self.calculate_flocking_forces();
+        self.calculate_flocking_forces(mouse_pos);
 
         // edge avoidance berechnen
         let edge_avoid = check_edge_boids(&self.boids);
