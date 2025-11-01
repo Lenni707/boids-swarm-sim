@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Boids Flocking Simulation</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      text-align: center;
+      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+      color: #e2e8f0;
+      margin: 0;
+      padding: 2rem;
+      min-height: 100vh;
+    }
+    h1 {
+      margin-bottom: 0.5rem;
+      font-size: 2.5rem;
+      background: linear-gradient(135deg, #60a5fa 0%, #3b82f6 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+    h2 {
+      margin-top: 2.5rem;
+      color: #60a5fa;
+      font-size: 1.5rem;
+    }
+    canvas {
+      border: 2px solid #3b82f6;
+      border-radius: 12px;
+      box-shadow: 0 0 30px rgba(59, 130, 246, 0.3), 0 10px 40px rgba(0, 0, 0, 0.4);
+      background: #0f172a;
+      display: block;
+      margin: 0 auto;
+    }
+    p {
+      margin-top: 1.5rem;
+      font-size: 1rem;
+      color: #cbd5e1;
+      max-width: 900px;
+      margin-left: auto;
+      margin-right: auto;
+      line-height: 1.6;
+    }
+    a {
+      color: #60a5fa;
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+    a:hover {
+      color: #93c5fd;
+      text-decoration: underline;
+    }
+    ul {
+      text-align: left;
+      display: inline-block;
+      margin: 1.5rem auto;
+      padding-left: 1.5rem;
+      color: #cbd5e1;
+      font-size: 0.95rem;
+      line-height: 1.8;
+    }
+    ul li {
+      margin-bottom: 0.5rem;
+    }
+    strong {
+      color: #60a5fa;
+    }
+    .wrap {
+      display: grid;
+      gap: 24px;
+      margin-top: 2rem;
+      justify-content: center;
+    }
+    @media (max-width: 1500px) {
+      canvas {
+        width: 100%;
+        height: auto;
+      }
+    }
+  </style>
+</head>
+<body>
+  <h1>Boids Flocking Simulation</h1>
+
+  <div class="wrap">
+    <canvas id="glcanvas" width="1200" height="675" tabindex="1"></canvas>
+  </div>
+
+  <p>An interactive flocking simulation built with <strong>Macroquad</strong> (WASM).</p>
+  <p>A desktop version is available <a href="https://github.com/Lenni707/boid-swarm-sim">here</a>.</p>
+
+  <h2>Controls</h2>
+  <ul>
+    <li><strong>Left Click</strong> — Spawn a predator at cursor position</li>
+    <li><strong>Space</strong> — Spawn 50 new boids</li>
+    <li><strong>R</strong> — Reset and clear all entities</li>
+    <li><strong>E</strong> — Toggle mouse chase mode (boids flee from cursor)</li>
+  </ul>
+
+  <h2>How It Works</h2>
+  <ul>
+    <li>Each boid (white triangle) follows three simple rules:</li>
+    <ul style="display: inline-block; text-align: left; margin-left: 2rem;">
+      <li><strong>Separation</strong> — Avoid crowding nearby boids</li>
+      <li><strong>Alignment</strong> — Match the velocity of nearby boids</li>
+      <li><strong>Cohesion</strong> — Move toward the center of nearby boids</li>
+    </ul>
+    <li>Predators (red triangles) hunt and chase boids within their detection range</li>
+  </ul>
+
+  <script src="https://not-fl3.github.io/miniquad-samples/mq_js_bundle.js"></script>
+  <script>load("../target/wasm32-unknown-unknown/release/boids-swarm-sim.wasm");</script>
+</body>
+</html>

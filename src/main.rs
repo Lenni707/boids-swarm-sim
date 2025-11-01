@@ -4,26 +4,25 @@ use std::collections::HashMap;
 
 // -!TODO!- 
 // - so ein cone für die sicht des boids adden damit er z.b nicht hinter sich gucken kann
-// raubvogel adden vor dem die boids wegfliegen
 // wind adden was die beeinflusst
 // prefrences: manches boids sind eher links/rechts zentriert
 // 3d machen
 
-const SCREEN_WIDTH: i32 = 1400;
-const SCREEN_HEIGHT: i32 = 800;
+const SCREEN_WIDTH: i32 = 1200;
+const SCREEN_HEIGHT: i32 = 675;
 
-const VISUAL_RANGE: f32 = 75.0;           // sight distance
+const VISUAL_RANGE: f32 = 75.0;           // sight distance // war mal 75.0
 const VISUAL_RANGE_SQ: f32 = VISUAL_RANGE * VISUAL_RANGE;  // für distance_squared optimization , weiß auch nicht warum danke claude <3
 
 const SEE_PRED_RANGE: f32 = 100.0;
 
-const COHERENCE: f32 = 0.002 * 0.35;             // how much boids move toward group center
+const COHERENCE: f32 = 0.002 * 0.4;             // how much boids move toward group center // war mal 0.4
 
-const AVOIDFACTOR: f32 = 0.05 * 2.0;            // how strongly they avoid others // war mal 0.08
-const AVOIDDISTANCE: f32 = 20.0;          // minimum allowed distance between boids
+const AVOIDFACTOR: f32 = 0.05 * 1.5;            // how strongly they avoid others // war mal 2.0
+const AVOIDDISTANCE: f32 = 20.0;          // minimum allowed distance between boids // war mal 20.0
 const AVOIDDISTANCE_SQ: f32 = AVOIDDISTANCE * AVOIDDISTANCE;  // für distance_squared optimization, weiß auch nicht warum danke claude <3
 
-const ALIGNMENTFACTOR: f32 = 0.05 * 0.5;        // how strongly they match neighbor velocity
+const ALIGNMENTFACTOR: f32 = 0.05 * 0.5;        // how strongly they match neighbor velocity // war mal 0.5
 
 const FLEE_FACTOR: f32 = 0.01;             // how much they wanna flee from a pred
 
@@ -31,7 +30,7 @@ const TURNFACTOR: f32 = 0.2;              // how fast they turn near edges
 const EDGE_DISTANCE: f32 = 100.0;         // how close to edge before turning
 
 const MAX_SPEED: f32 = 5.0;
-const MIN_SPEED: f32 = 2.5;
+const MIN_SPEED: f32 = 3.0;
 const MAX_TURN: f32 = 3.0;
 
 const CELL_SIZE: f32 = 75.0;              // spatial partitioning cell size (same as VISUAL_RANGE)
